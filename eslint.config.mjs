@@ -11,6 +11,9 @@ const compat = new FlatCompat({
 
 const eslintConfig = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
+  {
+    ignores: ['public/sw.js', 'public/workbox-*.js']
+  }
 ];
 
 export default eslintConfig;
