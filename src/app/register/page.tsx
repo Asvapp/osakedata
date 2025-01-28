@@ -46,7 +46,8 @@ export default function Register() {
         email,
         createdAt: new Date().toISOString(),
         favorites: [],
-        lastLogin: new Date().toISOString()
+        lastLogin: new Date().toISOString(),
+        disabled: false  // Tämä lisätty
       }
 
       // Tallenna käyttäjätiedot Firestoreen

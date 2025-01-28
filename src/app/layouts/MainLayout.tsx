@@ -51,7 +51,7 @@ export default function MainLayout({
 
   return (
     <div className="min-h-screen font-quicksand">
-      <header className="bg-nav-blue shadow-custom h-16 flex items-center justify-between px-6">
+      <header className="bg-nav-blue shadow-custom h-16 flex items-center justify-between px-1">
         <Link href="/home" className="text-white">
           <Image 
             src="/osakedatalogo.png" 

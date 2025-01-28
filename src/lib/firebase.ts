@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
-import { getFirestore } from 'firebase/firestore'
+import { getFirestore, doc, getDoc } from 'firebase/firestore'
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -16,3 +16,14 @@ const app = initializeApp(firebaseConfig)
 
 export const auth = getAuth(app)
 export const db = getFirestore(app)
+
+// Lisätään tämä funktio
+export const getCurrentUser = async () => {
+  const currentUser = auth.currentUser
+  if (!currentUser) return null
+
+  const userDoc = await getDoc(doc(db, "users", currentUser.uid))
+  if (!userDoc.exists()) return null
+
+  return userDoc.data()
+}

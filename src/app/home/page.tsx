@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { getCurrentUser } from '@/lib/firebase'
 
 interface IndexData {
   change: number
@@ -33,6 +34,15 @@ export default function Home() {
   const [searchTerm, setSearchTerm] = useState('')
   const [marketData, setMarketData] = useState<MarketData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [isAdmin, setIsAdmin] = useState(false)
+
+  useEffect(() => {
+    const checkAdmin = async () => {
+      const user = await getCurrentUser()
+      setIsAdmin(user?.admin || false)
+    }
+    checkAdmin()
+  }, [])
 
   useEffect(() => {
     const fetchIndices = async () => {
@@ -60,6 +70,18 @@ export default function Home() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-8">
+      {/* Admin-painike */}
+      {isAdmin && (
+        <div className="text-right p-4">
+          <Link 
+            href="/admin" 
+            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+          >
+            Hallintapaneeli
+          </Link>
+        </div>
+      )}
+
       {/* Market Overview */}
       <div className="text-center flex justify-center gap-8">
         {loading ? (
