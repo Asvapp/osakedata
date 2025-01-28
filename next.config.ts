@@ -1,4 +1,4 @@
-import NextPWA from 'next-pwa';
+import NextPWA from 'next-pwa'
 
 const withPWA = NextPWA({
   dest: 'public',
@@ -12,38 +12,19 @@ const withPWA = NextPWA({
   runtimeCaching: [
     {
       urlPattern: /_next\/.*/,
-      handler: 'NetworkFirst',
+      handler: 'StaleWhileRevalidate',
       options: {
-        cacheName: 'next-assets',
-        expiration: {
-          maxEntries: 50,
-          maxAgeSeconds: 24 * 60 * 60,
-        },
-      },
+        cacheName: 'next-assets'
+      }
     },
     {
-      urlPattern: /\/api\/.*/,
-      handler: 'NetworkFirst',
-      options: {
-        cacheName: 'api-cache',
-        expiration: {
-          maxEntries: 50,
-          maxAgeSeconds: 60 * 60,
-        },
-      },
-    },
-    {
-      urlPattern: /\.(?:png|gif|jpg|jpeg|svg)$/,
+      urlPattern: /\.(png|jpg|jpeg|svg|gif|ico)$/,
       handler: 'CacheFirst',
       options: {
-        cacheName: 'images',
-        expiration: {
-          maxEntries: 20,
-          maxAgeSeconds: 7 * 24 * 60 * 60,
-        },
-      },
+        cacheName: 'image-cache'
+      }
     }
-  ],
+  ]
 });
 
 /** @type {import('next').NextConfig} */
@@ -57,6 +38,6 @@ const nextConfig = {
       },
     ];
   },
-};
+}
 
-export default withPWA(nextConfig);
+export default withPWA(nextConfig)
