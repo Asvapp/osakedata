@@ -1,6 +1,9 @@
 import { getApps, cert, initializeApp } from 'firebase-admin/app'
 import { getAuth } from 'firebase-admin/auth'
 
+// Tarkista että process.env arvot tulevat oikein
+console.log('Project ID:', process.env.FIREBASE_ADMIN_PROJECT_ID)
+
 if (!getApps().length) {
   initializeApp({
     credential: cert({
