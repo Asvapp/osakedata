@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { getCurrentUser } from '@/lib/firebase'
+import { collection, getDocs } from 'firebase/firestore'
+import { db } from '@/lib/firebase'
 
 interface IndexData {
   change: number
@@ -15,26 +17,17 @@ interface MarketData {
 }
 
 interface Stock {
-  ticker: string
+  id: string
   name: string
-  price: number
-  change: number
+  createdAt: Date
 }
-
-// Mock-data esimerkkinä
-const mockStocks: Stock[] = [
-  { ticker: 'NOKIA', name: 'Nokia Oyj', price: 3.45, change: 1.2 },
-  { ticker: 'SAMPO', name: 'Sampo Oyj', price: 42.85, change: -0.5 },
-  { ticker: 'HUKI', name: 'Huhtamäki Oyj', price: 34.40, change: -0.64 },
-  { ticker: 'FORTUM', name: 'Fortum Oyj', price: 12.38, change: 0.8 },
-  { ticker: 'UPM', name: 'UPM-Kymmene Oyj', price: 28.75, change: -0.2 }
-]
 
 export default function Home() {
   const [searchTerm, setSearchTerm] = useState('')
   const [marketData, setMarketData] = useState<MarketData | null>(null)
   const [loading, setLoading] = useState(true)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [stocks, setStocks] = useState<Stock[]>([])
 
   useEffect(() => {
     const checkAdmin = async () => {
@@ -42,6 +35,25 @@ export default function Home() {
       setIsAdmin(user?.admin || false)
     }
     checkAdmin()
+  }, [])
+
+  useEffect(() => {
+    const fetchStocks = async () => {
+      try {
+        const stocksRef = collection(db, 'stocks')
+        const snapshot = await getDocs(stocksRef)
+        const stocksData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          createdAt: doc.data().createdAt?.toDate()
+        })) as Stock[]
+        setStocks(stocksData)
+      } catch (error) {
+        console.error('Virhe osakkeiden haussa:', error)
+      }
+    }
+
+    fetchStocks()
   }, [])
 
   useEffect(() => {
@@ -58,19 +70,17 @@ export default function Home() {
     }
 
     fetchIndices()
-    // Päivitetään indeksit 5 minuutin välein
     const interval = setInterval(fetchIndices, 5 * 60 * 1000)
     return () => clearInterval(interval)
   }, [])
 
-  const filteredStocks = mockStocks.filter(stock => 
-    stock.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    stock.ticker.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredStocks = stocks.filter(stock => 
+    stock.name.toLowerCase().startsWith(searchTerm.toLowerCase()) ||
+    stock.id.toLowerCase().startsWith(searchTerm.toLowerCase())
   )
 
   return (
     <div className="max-w-7xl mx-auto space-y-8">
-      {/* Admin-painike */}
       {isAdmin && (
         <div className="text-right p-4">
           <Link 
@@ -82,7 +92,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Market Overview */}
       <div className="text-center flex justify-center gap-8">
         {loading ? (
           <div>Ladataan indeksejä...</div>
@@ -108,7 +117,6 @@ export default function Home() {
         )}
       </div>
 
-      {/* Hakuosio */}
       <div className="text-center mb-8">
         <h1 className="text-4xl mb-6">HAE OSAKETTA</h1>
         <div className="max-w-2xl mx-auto relative">
@@ -125,23 +133,16 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Lista osakkeista */}
-      <div className="bg-card-gray rounded-xl shadow-lg">
+      <div className="bg-white rounded-xl shadow-lg max-w-2xl mx-auto">
         {filteredStocks.map(stock => (
           <Link 
-            key={stock.ticker} 
-            href={`/osake/${stock.ticker}`} 
-            className="flex items-center justify-between p-4 hover:bg-gray-50 border-b last:border-b-0"
+            key={stock.id} 
+            href={`/osake/${stock.id}`}
+            className="flex items-center justify-between p-4 hover:bg-gray-100 border-b last:border-b-0"
           >
             <div>
-              <div className="font-medium">{stock.ticker}</div>
+              <div className="font-medium">{stock.id.toUpperCase()}</div>
               <div className="text-sm text-gray-600">{stock.name}</div>
-            </div>
-            <div className="text-right">
-              <div>{stock.price.toFixed(2)} €</div>
-              <div className={stock.change >= 0 ? "text-green-500" : "text-red-500"}>
-                {stock.change > 0 ? "+" : ""}{stock.change}%
-              </div>
             </div>
           </Link>
         ))}

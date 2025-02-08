@@ -69,6 +69,9 @@ export default function MainLayout({
           <Link href="/laskurit" className="hover:opacity-80">
             Laskurit
           </Link>
+          <Link href="/viritin" className="hover:opacity-80">
+  Viritin
+</Link>
           <div className="border-l border-white/30 h-6 mx-2" />
           
           <div className="relative user-menu">
