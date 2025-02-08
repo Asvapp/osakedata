@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 
 declare global {
-    interface Window {
-      webkitAudioContext: typeof AudioContext
-    }
+  interface Window {
+    webkitAudioContext: typeof AudioContext
   }
+}
 
 const UkuleleTuner = () => {
   const [pitch, setPitch] = useState<number>(0);
   const [note, setNote] = useState<string>('');
+  const [deviation, setDeviation] = useState<number>(0);
   const [isListening, setIsListening] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -27,20 +28,30 @@ const UkuleleTuner = () => {
   const findClosestNote = (frequency: number): { note: string; diff: number } => {
     let closestNote = '';
     let closestDiff = Infinity;
+    let targetFreq = 0;
 
     Object.entries(ukuleleStrings).forEach(([note, noteFreq]) => {
       const diff = Math.abs(frequency - noteFreq);
       if (diff < closestDiff) {
         closestDiff = diff;
         closestNote = note;
+        targetFreq = noteFreq;
       }
     });
+
+    // Laske poikkeama sentteinä
+    const cents = 1200 * Math.log2(frequency / targetFreq);
+    setDeviation(cents);
 
     return { note: closestNote, diff: closestDiff };
   };
 
   const startListening = async () => {
     try {
+      if (!window.isSecureContext) {
+        throw new Error('Mikrofoni vaatii HTTPS-yhteyden toimiakseen.');
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
       analyserRef.current = audioContextRef.current.createAnalyser();
@@ -53,8 +64,12 @@ const UkuleleTuner = () => {
       setError('');
       
       updatePitch();
-    } catch  {
-      setError('Mikrofonin käyttöoikeus tarvitaan virittimen käyttöön.');
+    } catch {  // Poistetaan käyttämätön error-parametri
+      if (!window.isSecureContext) {
+        setError('Mikrofoni vaatii HTTPS-yhteyden toimiakseen. Varmista että käytät sivua HTTPS-protokollan kautta.');
+      } else {
+        setError('Mikrofonin käyttöoikeus tarvitaan virittimen käyttöön.');
+      }
     }
   };
 
@@ -106,6 +121,20 @@ const UkuleleTuner = () => {
     };
   }, []);
 
+  // Apufunktio viritystilanteen värin määrittämiseen
+  const getTuningColor = (cents: number): string => {
+    if (Math.abs(cents) < 5) return 'bg-green-500';
+    if (Math.abs(cents) < 15) return 'bg-yellow-500';
+    return 'bg-red-500';
+  };
+
+  // Apufunktio viritysohjeisiin
+  const getTuningDirection = (cents: number): string => {
+    if (Math.abs(cents) < 5) return 'Vireessä! 👍';
+    if (cents > 0) return 'Löysää kieltä ⬇️';
+    return 'Kiristä kieltä ⬆️';
+  };
+
   return (
     <div className="p-4 max-w-md mx-auto">
       <h2 className="text-2xl font-bold mb-4">Ukulele Viritin</h2>
@@ -125,24 +154,45 @@ const UkuleleTuner = () => {
         </button>
 
         {isListening && (
-          <div className="text-center space-y-2">
+          <div className="text-center space-y-4">
             <div className="text-xl">
-              Havaittu nuotti: <strong>{note}</strong>
+              <div>Havaittu kieli: <strong>{note}</strong></div>
+              <div className="text-sm text-gray-600">
+                Taajuus: {pitch.toFixed(1)} Hz
+              </div>
             </div>
-            <div className="text-sm text-gray-600">
-              Taajuus: {pitch.toFixed(1)} Hz
+
+            <div className="relative h-4 bg-gray-200 rounded-full overflow-hidden">
+              <div 
+                className={`absolute h-full transition-all ${getTuningColor(deviation)}`}
+                style={{ 
+                  left: '50%',
+                  width: '4px',
+                  transform: `translateX(${Math.max(Math.min(deviation * 2, 50), -50)}px)`
+                }}
+              />
+              <div className="absolute top-0 left-1/2 w-0.5 h-full bg-black"/>
+            </div>
+
+            <div className="text-lg font-medium">
+              {getTuningDirection(deviation)}
             </div>
           </div>
         )}
 
-        <div className="mt-4">
+        <div className="mt-8">
           <h3 className="font-semibold mb-2">Ukulelen viritys (GCEA):</h3>
-          <ul className="list-disc pl-5">
-            <li>G4: 392.00 Hz</li>
-            <li>C4: 261.63 Hz</li>
-            <li>E4: 329.63 Hz</li>
-            <li>A4: 440.00 Hz</li>
-          </ul>
+          <div className="grid grid-cols-2 gap-4">
+            {Object.entries(ukuleleStrings).map(([stringNote, freq]) => (
+              <div 
+                key={stringNote}
+                className={`p-3 rounded border ${note === stringNote ? 'bg-blue-100 border-blue-500' : 'border-gray-300'}`}
+              >
+                <div className="font-bold">{stringNote}</div>
+                <div className="text-sm text-gray-600">{freq} Hz</div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>
