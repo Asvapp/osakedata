@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 
 declare global {
   interface Window {
@@ -8,193 +8,181 @@ declare global {
   }
 }
 
+// Määritellään tyyppi ukulelen kielille
+type UkuleleString = 'G4' | 'C4' | 'E4' | 'A4';
+type UkuleleStrings = Record<UkuleleString, number>;
+
 const UkuleleTuner = () => {
   const [pitch, setPitch] = useState<number>(0);
-  const [note, setNote] = useState<string>('');
-  const [deviation, setDeviation] = useState<number>(0);
+  const [note, setNote] = useState<UkuleleString | ''>('');
   const [isListening, setIsListening] = useState<boolean>(false);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const mediaStreamSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
-  // Ukulelen kielet ja niiden taajuudet (G4, C4, E4, A4)
-  const ukuleleStrings: Record<string, number> = {
+  const ukuleleStrings: UkuleleStrings = {
     'G4': 392.00,
     'C4': 261.63,
     'E4': 329.63,
     'A4': 440.00
   };
 
-  const findClosestNote = (frequency: number): { note: string; diff: number } => {
-    let closestNote = '';
-    let closestDiff = Infinity;
-    let targetFreq = 0;
+  const findClosestNote = (freq: number): UkuleleString | '' => {
+    let closestNote: UkuleleString | '' = '';
+    let minDiff = Infinity;
 
-    Object.entries(ukuleleStrings).forEach(([note, noteFreq]) => {
-      const diff = Math.abs(frequency - noteFreq);
-      if (diff < closestDiff) {
-        closestDiff = diff;
+    (Object.entries(ukuleleStrings) as [UkuleleString, number][]).forEach(([note, noteFreq]) => {
+      const diff = Math.abs(freq - noteFreq);
+      if (diff < minDiff) {
+        minDiff = diff;
         closestNote = note;
-        targetFreq = noteFreq;
       }
     });
 
-    const cents = 1200 * Math.log2(frequency / targetFreq);
-    setDeviation(cents);
-
-    return { note: closestNote, diff: closestDiff };
+    return minDiff < 30 ? closestNote : '';
   };
 
   const startListening = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        } 
-      });
-      
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+
       audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
-      analyserRef.current = audioContextRef.current.createAnalyser();
-      analyserRef.current.fftSize = 2048;
-      analyserRef.current.minDecibels = -90;
-      analyserRef.current.maxDecibels = -10;
-      analyserRef.current.smoothingTimeConstant = 0.85;
-      
-      mediaStreamSourceRef.current = audioContextRef.current.createMediaStreamSource(stream);
-      mediaStreamSourceRef.current.connect(analyserRef.current);
+      sourceRef.current = audioContextRef.current.createMediaStreamSource(stream);
+      processorRef.current = audioContextRef.current.createScriptProcessor(4096, 1, 1);
+
+      processorRef.current.onaudioprocess = (e) => {
+        const input = e.inputBuffer.getChannelData(0);
+        let sum = 0;
+        let maxPeak = 0;
+        let crossings = 0;
+        let prevSample = 0;
+
+        for (let i = 0; i < input.length; i++) {
+          sum += input[i] * input[i];
+          maxPeak = Math.max(maxPeak, Math.abs(input[i]));
+          
+          if (i > 0 && input[i] > 0 && prevSample <= 0) {
+            crossings++;
+          }
+          prevSample = input[i];
+        }
+
+        const rms = Math.sqrt(sum / input.length);
+
+        if (rms > 0.01 && maxPeak > 0.02) {
+          const frequency = (audioContextRef.current?.sampleRate || 44100) * crossings / (2 * input.length);
+          
+          if (frequency > 200 && frequency < 500) {
+            console.log('Frequency:', frequency.toFixed(1), 'Hz');
+            setPitch(frequency);
+            const detectedNote = findClosestNote(frequency);
+            setNote(detectedNote);
+          }
+        } else {
+          setNote('');
+          setPitch(0);
+        }
+      };
+
+      sourceRef.current.connect(processorRef.current);
+      processorRef.current.connect(audioContextRef.current.destination);
       
       setIsListening(true);
-      updatePitch();
-    } catch  {
-      alert('Salli mikrofonin käyttö selaimen asetuksista');
+    } catch (err) {
+      console.error('Error:', err);
+      alert('Mikrofonin käyttö epäonnistui');
     }
-  };
-
-  const updatePitch = () => {
-    if (!isListening || !analyserRef.current || !audioContextRef.current) return;
-
-    const bufferLength = analyserRef.current.frequencyBinCount;
-    const frequencyData = new Float32Array(bufferLength);
-    analyserRef.current.getFloatFrequencyData(frequencyData);
-
-    const timeData = new Float32Array(bufferLength);
-    analyserRef.current.getFloatTimeDomainData(timeData);
-    
-    const rms = Math.sqrt(timeData.reduce((acc, val) => acc + val * val, 0) / bufferLength);
-    const decibels = 20 * Math.log10(rms);
-
-    if (decibels < -50) {
-      requestAnimationFrame(updatePitch);
-      return;
-    }
-
-    let maxValue = -Infinity;
-    let maxIndex = -1;
-    
-    for (let i = 0; i < bufferLength; i++) {
-      if (frequencyData[i] > maxValue) {
-        maxValue = frequencyData[i];
-        maxIndex = i;
-      }
-    }
-
-    const foundPitch = maxIndex * audioContextRef.current.sampleRate / (bufferLength * 2);
-
-    if (foundPitch > 50 && foundPitch < 1000) {
-      setPitch(foundPitch);
-      const { note } = findClosestNote(foundPitch);
-      setNote(note);
-    }
-
-    requestAnimationFrame(updatePitch);
   };
 
   const stopListening = () => {
-    if (mediaStreamSourceRef.current) {
-      mediaStreamSourceRef.current.disconnect();
-      setIsListening(false);
+    if (processorRef.current) {
+      processorRef.current.disconnect();
+      sourceRef.current?.disconnect();
     }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+    }
+    setIsListening(false);
+    setNote('');
+    setPitch(0);
   };
 
-  useEffect(() => {
-    return () => {
-      stopListening();
-      if (audioContextRef.current?.state !== 'closed') {
-        audioContextRef.current?.close();
-      }
-    };
-  }, []);
-
-  const getTuningColor = (cents: number): string => {
-    if (Math.abs(cents) < 5) return 'bg-green-500';
-    if (Math.abs(cents) < 15) return 'bg-yellow-500';
-    return 'bg-red-500';
-  };
-
-  const getTuningDirection = (cents: number): string => {
-    if (Math.abs(cents) < 5) return 'Vireessä! 👍';
-    if (cents > 0) return 'Löysää kieltä ⬇️';
-    return 'Kiristä kieltä ⬆️';
-  };
 
   return (
     <div className="p-4 max-w-md mx-auto">
       <h2 className="text-2xl font-bold mb-4">Ukulele Viritin</h2>
 
-      <div className="space-y-4">
-        <button
-          onClick={isListening ? stopListening : startListening}
-          className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-        >
-          {isListening ? 'Pysäytä' : 'Aloita viritys'}
-        </button>
+      <button
+        onClick={isListening ? stopListening : startListening}
+        className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 mb-6"
+      >
+        {isListening ? 'Pysäytä' : 'Aloita viritys'}
+      </button>
 
-        {isListening && (
-          <div className="text-center space-y-4">
-            <div className="text-xl">
-              <div>Havaittu kieli: <strong>{note}</strong></div>
-              <div className="text-sm text-gray-600">
-                Taajuus: {pitch.toFixed(1)} Hz
-              </div>
-            </div>
-
-            <div className="relative h-4 bg-gray-200 rounded-full overflow-hidden">
-              <div 
-                className={`absolute h-full transition-all ${getTuningColor(deviation)}`}
-                style={{ 
-                  left: '50%',
-                  width: '4px',
-                  transform: `translateX(${Math.max(Math.min(deviation * 2, 50), -50)}px)`
-                }}
-              />
-              <div className="absolute top-0 left-1/2 w-0.5 h-full bg-black"/>
-            </div>
-
-            <div className="text-lg font-medium">
-              {getTuningDirection(deviation)}
-            </div>
-          </div>
-        )}
-
-        <div className="mt-8">
-          <h3 className="font-semibold mb-2">Ukulelen viritys (GCEA):</h3>
-          <div className="grid grid-cols-2 gap-4">
-            {Object.entries(ukuleleStrings).map(([stringNote, freq]) => (
-              <div 
-                key={stringNote}
-                className={`p-3 rounded border ${note === stringNote ? 'bg-blue-100 border-blue-500' : 'border-gray-300'}`}
-              >
-                <div className="font-bold">{stringNote}</div>
-                <div className="text-sm text-gray-600">{freq} Hz</div>
-              </div>
-            ))}
-          </div>
+      {/* Kielten taulukko */}
+      <div className="grid grid-cols-2 gap-4 mb-6">
+        <div className={`p-4 rounded-lg border-2 ${note === 'G4' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}>
+          <div className="text-xl font-bold">1. kieli (G)</div>
+          <div className="text-sm">ylin kieli</div>
+        </div>
+        <div className={`p-4 rounded-lg border-2 ${note === 'C4' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}>
+          <div className="text-xl font-bold">2. kieli (C)</div>
+          <div className="text-sm">toinen ylhäältä</div>
+        </div>
+        <div className={`p-4 rounded-lg border-2 ${note === 'E4' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}>
+          <div className="text-xl font-bold">3. kieli (E)</div>
+          <div className="text-sm">toinen alhaalta</div>
+        </div>
+        <div className={`p-4 rounded-lg border-2 ${note === 'A4' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}>
+          <div className="text-xl font-bold">4. kieli (A)</div>
+          <div className="text-sm">alin kieli</div>
         </div>
       </div>
+
+      {/* Viritysskaala - näkyy aina */}
+      <div className="p-4 bg-white rounded-lg border shadow-sm">
+        <div className="text-lg font-bold mb-2">
+          {isListening ? (note ? `Havaittu: ${note.charAt(0)}-kieli` : 'Soita kieltä...') : 'Aloita viritys painamalla nappia'}
+        </div>
+
+        <div className="relative h-8 bg-gray-200 rounded-full overflow-hidden mb-2">
+          <div className="absolute top-0 left-1/2 h-full w-1 bg-black z-10"/>
+          {isListening && note && (
+            <div 
+              className={`absolute h-full transition-all ${
+                Math.abs(pitch - ukuleleStrings[note]) < 5 ? 'bg-green-500' :
+                Math.abs(pitch - ukuleleStrings[note]) < 15 ? 'bg-yellow-500' : 'bg-red-500'
+              }`}
+              style={{ 
+                left: '50%',
+                width: '8px',
+                transform: `translateX(${Math.max(Math.min((pitch - ukuleleStrings[note]) * 2, 50), -50)}px)`
+              }}
+            />
+          )}
+        </div>
+
+        <div className="flex justify-between text-sm text-gray-600 mb-2">
+          <span>← Löysää</span>
+          <span>Kiristä →</span>
+        </div>
+
+        {isListening && note && (
+          <div className="text-center text-lg font-medium">
+            {Math.abs(pitch - ukuleleStrings[note]) < 5 ? (
+              <span className="text-green-600">✓ Vireessä!</span>
+            ) : pitch > ukuleleStrings[note] ? (
+              <span className="text-red-600">↓ Löysää kieltä</span>
+            ) : (
+              <span className="text-red-600">↑ Kiristä kieltä</span>
+            )}
+          </div>
+        )}
+      </div>
     </div>
-  );
+);
 };
 
 export default UkuleleTuner;
