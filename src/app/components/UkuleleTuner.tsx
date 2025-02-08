@@ -1,3 +1,5 @@
+'use client'
+
 import React, { useState, useEffect, useRef } from 'react';
 
 declare global {
@@ -48,27 +50,73 @@ const UkuleleTuner = () => {
 
   const startListening = async () => {
     try {
+      console.log('Tarkistetaan HTTPS...');
       if (!window.isSecureContext) {
-        throw new Error('Mikrofoni vaatii HTTPS-yhteyden toimiakseen.');
+        throw new Error('HTTPS_REQUIRED');
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      console.log('Tarkistetaan mikrofonin saatavuus...');
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Selain ei tue mikrofonia');
+      }
+
+      console.log('Pyydetään mikrofonilupaa...');
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        } 
+      });
+      
+      console.log('Mikrofoni saatu, luodaan AudioContext...');
       audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      
+      console.log('Luodaan analyser...');
       analyserRef.current = audioContextRef.current.createAnalyser();
+      
+      console.log('Luodaan MediaStreamSource...');
       mediaStreamSourceRef.current = audioContextRef.current.createMediaStreamSource(stream);
       
+      console.log('Yhdistetään analyseriin...');
       mediaStreamSourceRef.current.connect(analyserRef.current);
       analyserRef.current.fftSize = 2048;
       
+      console.log('Asetetaan tila...');
       setIsListening(true);
       setError('');
       
+      // Tulostetaan audiolähteen tiedot
+      const audioTracks = stream.getAudioTracks();
+      console.log('Audioraidat:', audioTracks.map(track => ({
+        label: track.label,
+        enabled: track.enabled,
+        muted: track.muted,
+        readyState: track.readyState
+      })));
+
       updatePitch();
-    } catch {  // Poistetaan käyttämätön error-parametri
+    } catch (error) {
+      console.error('Virhe mikrofonin käyttöönotossa:', error);
+      
       if (!window.isSecureContext) {
-        setError('Mikrofoni vaatii HTTPS-yhteyden toimiakseen. Varmista että käytät sivua HTTPS-protokollan kautta.');
+        setError('Mikrofoni vaatii HTTPS-yhteyden toimiakseen.');
+      } else if (error instanceof DOMException) {
+        switch (error.name) {
+          case 'NotAllowedError':
+            setError('Mikrofonin käyttöä ei sallittu. Tarkista selaimen lupa-asetukset.');
+            break;
+          case 'NotFoundError':
+            setError('Mikrofonia ei löydy. Tarkista että mikrofoni on kytketty ja toiminnassa.');
+            break;
+          case 'NotReadableError':
+            setError('Mikrofonia ei voitu käyttää. Onko se ehkä jonkin muun sovelluksen käytössä?');
+            break;
+          default:
+            setError(`Mikrofonin käyttöönotto epäonnistui: ${error.message}`);
+        }
       } else {
-        setError('Mikrofonin käyttöoikeus tarvitaan virittimen käyttöön.');
+        setError('Mikrofonin käyttöönotto epäonnistui tuntemattomasta syystä.');
       }
     }
   };
