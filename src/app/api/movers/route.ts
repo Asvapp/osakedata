@@ -3,20 +3,20 @@ import { NextResponse } from 'next/server';
 import yahooFinance from 'yahoo-finance2';
 import admin from 'firebase-admin';
 import { Firestore } from 'firebase-admin/firestore';
-import path from 'path';
-import fs from 'fs';
 
-// Admin SDK alustus
-// Huom: alustetaan vain kerran
+
 let adminDb: Firestore;
 if (!admin.apps.length) {
   try {
-    // Haetaan tiedosto projektin juuresta
-    const serviceAccountPath = path.join(process.cwd(), 'serviceKey.json');
-    const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
+    // Käytä ympäristömuuttujia serviceKey.json-tiedoston sijaan
+    const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n');
     
     admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount)
+      credential: admin.credential.cert({
+        projectId: process.env.FIREBASE_ADMIN_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
+        privateKey: privateKey
+      })
     });
     
     adminDb = admin.firestore();
